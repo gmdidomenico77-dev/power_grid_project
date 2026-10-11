@@ -1,0 +1,33 @@
+# Source data (87 MB, download separately; see README)
+data/*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Vitis HLS build output
+hls/**/solution*/
+hls/**/*.autopilot/
+*.autopilot
+
+# Vivado build output (keep vivado/output/*.bit and *.hwh, which are deliverables)
+vivado/*.cache/
+vivado/*.hw/
+vivado/*.gen/
+vivado/*.ip_user_files/
+vivado/*.runs/
+vivado/*.sim/
+.Xil/
+*.jou
+*.str
+
+# Tool logs
+*.log
+vivado*.backup.jou
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
