@@ -98,6 +98,13 @@ thresholds, then committed to this repository before the held-out set was scored
 rule that won on training also won on the holdout, with the ranking of all nine
 methods preserved except for a swap between R2 and R3.
 
+![Consensus against centralization](figures/fig9_consensus.png)
+
+**Figure 9.** Held-out macro F1 (data6, data11, data15) by detection architecture. OR
+consensus across four relay-local classifiers recovers 68.1% of the centralized
+model's gain over the always-predict-Attack floor, transmitting four bits per snapshot
+rather than 32 feature values and 4 flags.
+
 ## Hardware architecture
 
 ```
@@ -140,6 +147,87 @@ fold. Three features rank identically in all five folds (`PM2:V`, `PM1:V`, `PM5:
 Ranks six through ten are a statistical tie, so the tail of the selected set is not
 stable and is reported as such.
 
+## Design decisions
+
+Each of the choices below was made against a measurement rather than a preference,
+and in several cases the measurement overturned what I had originally planned to do.
+
+**Logistic regression rather than gradient boosting.** The original intent was to
+implement whichever model performed best, and under the grouped protocol that was
+XGBoost at 0.5150 macro F1 against logistic regression's 0.4732. However, a 300-tree
+ensemble at depth 6 comes to roughly 18,900 comparison nodes, which does not fit on a
+Zynq-7020 as combinational logic. I therefore retrained XGBoost at a size that does
+fit, 50 trees at depth 4, and evaluated it under the same grouped cross-validation on
+the same twelve training files. It returned 0.4299, which is below the linear model
+and only 0.013 above the always-predict-Attack floor. Specifically, this demonstrates
+that the accuracy advantage of boosting on this task is not available at deployable
+scale, so the relay-local classifier is logistic regression.
+
+**Eight features rather than five.** The reduction curve puts the knee at k=8 by the
+same within-1% rule used in the research phase, and k=5 misses that bar by 0.0051.
+Since k=8 pulls `PA:Z` back into the feature set, it also reintroduces the infinity
+policy and the `PA:Z__open` flag, giving nine model inputs instead of five. I kept
+k=8 because the rule was fixed before the curve was run, and because preprocessing
+happens on the host, where four additional inputs cost essentially nothing.
+
+**Separate fixed-point formats for inputs and weights.** My starting plan specified
+Q8.8, meaning eight integer and eight fractional bits for everything. However, once
+the frozen coefficients were in front of me it became clear that one shared format
+could not work, since the weights all sit inside plus or minus 0.355 while the
+standardized inputs reach 85. Q8.8 resolves to 0.0039, and because a value rounds to
+zero below half a step, any coefficient under 0.00195 disappears entirely. `PA2:VH`
+is 0.001808. In other words, the format I started with would have silently deleted a
+feature, and the hardware would have run perfectly while computing something other
+than the model I validated. I split the two instead: `ap_fixed<16,8>` for inputs,
+which covers the measured training range, and `ap_fixed<16,1>` for weights, which
+holds every coefficient to within 0.44%.
+
+![Quantization thresholds](figures/fig8_quantization.png)
+
+**Figure 8.** Weight magnitudes against the rounding thresholds of two fixed-point
+formats. A coefficient below half a quantization step rounds to zero. `PA2:VH` at
+0.001808 falls below the Q8.8 threshold of 0.00195 and is eliminated; Q1.15 holds
+every coefficient to within 0.44%.
+
+**Input range measured on training data, not the holdout.** The first version of the
+format sweep measured saturation against the held-out files, which top out at a
+z-score of 13.4, and every candidate came back clean. The training files reach 85.5,
+roughly six times further. Had I chosen the format from that sweep, real inputs would
+have been clipped in deployment with nothing to indicate it. The sweep now measures
+saturation against training z-scores, which is where a format decision belongs, and
+the holdout only confirms afterward that nothing clips.
+
+**The format that never clips over the one that scored higher.** Narrower integer
+ranges actually scored slightly better, with `ap_fixed<16,5>` reaching 0.999806
+consensus agreement against 0.998774 for the format I selected. That is not a
+contradiction, since a narrower range buys fractional precision and the values that
+get clipped sit far past the decision boundary anyway. However, those formats clip 42
+real training values, and I hold that a claim requiring no caveat is worth more than
+a thousandth of a point of agreement.
+
+**OR consensus rather than majority vote.** Requiring relays to agree makes detection
+worse, and the vote-threshold sweep is monotone across all four settings. An attack
+on this topology is a local event, so the relay nearest to it registers a clear
+signature while the other three barely see anything; demanding confirmation therefore
+discards the signal rather than reinforcing it. Majority vote gains almost nothing
+over the best individual relay, 0.4966 against 0.4945. The threshold was swept on
+training data and committed to this repository before the held-out set was scored.
+
+**Preprocessing on the host, classifier in the fabric.** Capping `PA:Z`, deriving the
+open-breaker flag, standardizing to z-scores, and quantizing all happen on the ARM
+processing system; the fabric does four dot products, four sign tests, and one OR.
+Standardization is a fixed affine map that in a real relay would live in the analog
+front end rather than in the detector, so this is not a shortcut, it is the correct
+place to draw the line. It also means the fabric receives integers and performs no
+rounding at all, which is what makes exact agreement between the Python reference and
+the generated hardware achievable rather than approximate.
+
+**A 40-bit accumulator.** The measured maximum across the held-out set needs 26 bits,
+and the worst case with every input saturated works out to about 1.31e9, which needs
+32 including the sign. Exact fit makes me uncomfortable and accumulator width is
+close to free in fabric, so I declared 40 and verified roughly 19,800x headroom
+against the observed maximum.
+
 ## Repository layout
 
 ```
@@ -155,6 +243,15 @@ models/
                                     outputs, for hardware replay
 python/
   lr_inference.py                   integer-only reference implementation
+  test_lr.py                        pytest suite for the reference
+  make_figures.py                   regenerates figures 8 and 9
+hls/
+  lr_consensus.cpp                  the kernel: 4 dot products plus an OR gate
+  lr_weights.h                      generated from lr_weights.npz, not hand-edited
+  lr_tb.cpp                         C testbench, exact-match pass criterion
+  test_vectors.txt                  100 training snapshots, 50 per class
+  run_hls.tcl                       csim, synthesis, cosim, IP export
+figures/                            generated plots
 data/
   power_system_combined.csv         not tracked, see Data below
 ```
@@ -188,11 +285,15 @@ Complete:
 - Model frozen and verified. The saved weights reproduce the scikit-learn decision
   function with a maximum error of 0.0 across all 61,976 held-out relay rows.
 - Consensus architecture selected, pre-registered, and validated once on held-out data.
+- Fixed-point formats selected from measured ranges, with the quantization cost of
+  each candidate recorded.
+- Integer-only reference implementation and a 12-test pytest suite.
+- HLS kernel written, with its arithmetic verified against the reference in Python
+  before compilation.
 
 In progress:
 
-- Fixed-point quantization analysis and format selection.
-- Vitis HLS kernel, C simulation, and C/RTL co-simulation.
+- C simulation and C/RTL co-simulation.
 - Vivado block design, bitstream, and deployment to Pynq-Z2.
 - Measured latency and resource utilization.
 - Hardware replay of the held-out set.
