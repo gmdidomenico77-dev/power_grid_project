@@ -12,6 +12,8 @@ hls/**/solution*/
 hls/**/*.autopilot/
 *.autopilot
 
+hls/*_proj/
+
 # Vivado build output (keep vivado/output/*.bit and *.hwh, which are deliverables)
 vivado/*.cache/
 vivado/*.hw/
