@@ -33,7 +33,7 @@ int main() {
             if (fscanf(f, "%d", &val) != 1) { printf("ERROR: truncated file\n"); return 1; }
             axis_t w;
             w.data = val;
-            w.keep = -1; w.strb = -1; w.user = 0; w.id = 0; w.dest = 0;
+            w.keep = -1; w.strb = -1;
             w.last = (k == WORDS - 1);
             in.write(w);
         }

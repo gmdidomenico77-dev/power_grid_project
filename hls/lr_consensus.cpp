@@ -3,6 +3,9 @@
 #include <ap_axi_sdata.h>
 #include "lr_weights.h"
 
+// The last three template parameters are the bit widths of the user, id, and
+// dest sideband signals. Zero means those fields are compiled out entirely, so
+// they are never assigned below. AXI DMA only needs data, keep, strb and last.
 typedef ap_axis<32, 0, 0, 0> axis_t;
 
 // One snapshot in: 4 relays x 9 features, 36 int16 values sign-extended into
@@ -42,9 +45,6 @@ RELAYS:
     o.data = attack;
     o.keep = -1;
     o.strb = -1;
-    o.user = 0;
-    o.id   = 0;
-    o.dest = 0;
     o.last = 1;                                 // DMA needs TLAST to end the transfer
     out.write(o);
 }
