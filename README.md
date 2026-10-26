@@ -130,6 +130,62 @@ Standardization and signal conditioning are fixed affine operations that in a re
 relay would live in the analog front end, not in the classifier. Keeping them on the
 host means the fabric implements the classifier and nothing else.
 
+### Synthesis results
+
+Vitis HLS 2024.1, target `xc7z020clg400-1`, 10 ns clock (100 MHz).
+
+| Metric | Value | |
+| --- | --- | --- |
+| Latency | 46 cycles | 460 ns at 100 MHz |
+| Latency variance | none | min equals max |
+| Critical path | 6.082 ns | against a 10 ns target |
+| LUT | 922 | 1.7% of 53,200 |
+| FF | 1,242 | 1.2% of 106,400 |
+| DSP | 36 | 16.4% of 220 |
+| BRAM | 0 | |
+
+Three things in that table are worth reading carefully.
+
+**Latency is deterministic.** Minimum and maximum are both 46 cycles, so no input
+makes the detector slower. A protection system needs a guaranteed worst case rather
+than a good average, and this design has one by construction.
+
+**36 of the 46 cycles are data movement.** The inner loop reports 36 cycles at an
+initiation interval of 1, which is the 36 input words arriving one per clock. All 36
+multiplies, the four comparisons, and the OR happen in roughly the remaining ten
+cycles. The arithmetic is not the bottleneck and was never going to be.
+
+**36 DSP slices is exactly 4 relays times 9 weights.** Every multiply is instantiated
+in physical hardware and runs in parallel, which is what the `UNROLL` pragmas were
+for. At 1.7% of the LUT fabric, four complete relay classifiers plus the consensus
+gate occupy a small corner of a $200 board.
+
+### Verification
+
+| Stage | Result |
+| --- | --- |
+| C simulation | 100 / 100 snapshots matched |
+| C/RTL co-simulation | PASS, 100 / 100 |
+| Maximum stream depth observed | 36 |
+
+Both stages use the same 100 test vectors, drawn from training files only and
+stratified 50/50 by class. Expected outputs come from the fixed-point Python
+reference in `python/lr_inference.py` rather than from the float model, so the pass
+criterion is exact equality rather than a tolerance.
+
+Exact agreement is achievable here by construction. The host quantizes, so the fabric
+receives integers and performs no rounding at all: 16-bit multiplies accumulated into
+a 40-bit register and compared against zero. Any disagreement between the Python
+reference and the generated RTL would be a bug, not a rounding artifact.
+
+The full report is in `docs/lr_consensus_csynth.rpt`.
+
+**On interpreting the 460 ns.** That figure is the classifier alone. End-to-end
+latency on hardware will also include the AXI DMA round trip and is expected to land
+in the tens of microseconds. Both numbers are real and they measure different things,
+so this README reports the classifier latency from synthesis and will report the
+measured end-to-end figure separately once the design runs on the board.
+
 ## Evaluation protocol
 
 Rows in this dataset are 99.92 percent autocorrelated in contiguous blocks, so a
@@ -290,12 +346,15 @@ Complete:
 - Integer-only reference implementation and a 12-test pytest suite.
 - HLS kernel written, with its arithmetic verified against the reference in Python
   before compilation.
+- Synthesized to the xc7z020 at 100 MHz: 460 ns deterministic latency, 1.7% LUT,
+  16.4% DSP, no BRAM.
+- C simulation and C/RTL co-simulation both passing 100 of 100 vectors.
+- RTL exported as a Vivado IP catalog package.
 
 In progress:
 
-- C simulation and C/RTL co-simulation.
 - Vivado block design, bitstream, and deployment to Pynq-Z2.
-- Measured latency and resource utilization.
+- Measured end-to-end latency on hardware.
 - Hardware replay of the held-out set.
 
 ## Limitations

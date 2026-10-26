@@ -1,4 +1,4 @@
-set PROJ    hls/lr_consensus_proj
+set PROJ    lr_consensus_proj
 set SOLN    solution1
 set PART    {xc7z020clg400-1}
 set PERIOD  10
@@ -8,9 +8,9 @@ set RUN_EXPORT 1
 open_project -reset $PROJ
 set_top lr_consensus
 
-add_files     hls/lr_consensus.cpp -cflags "-Ihls"
-add_files -tb hls/lr_tb.cpp        -cflags "-Ihls"
-add_files -tb hls/test_vectors.txt
+add_files     [file normalize lr_consensus.cpp]
+add_files -tb [file normalize lr_tb.cpp]       
+add_files -tb [file normalize test_vectors.txt]
 
 open_solution -reset -flow_target vivado $SOLN
 set_part $PART
