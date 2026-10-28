@@ -121,17 +121,23 @@ rather than 32 feature values and 4 flags.
 
 ## Hardware architecture
 
-```
-  relay 1 features --> [ LR core 1 ] --+
-  relay 2 features --> [ LR core 2 ] --+
-                                       +--> OR --> attack / natural
-  relay 3 features --> [ LR core 3 ] --+
-  relay 4 features --> [ LR core 4 ] --+
-```
+![System architecture](figures/fig10_architecture.png)
+
+**Figure 10.** Signal path from PMU measurement to consensus decision. Each relay
+contributes nine features, which the ARM processing system caps, standardizes and
+quantizes before handing 16-bit integers to the fabric. Each LR core performs nine
+multiply-accumulates and a sign test, emitting one bit. A single OR gate combines the
+four bits.
 
 Each LR core is a 9-input fixed-point dot product, a bias add, and a sign test,
 producing one bit. The consensus layer is a single OR gate. Four cores and the gate
 target one Zynq-7020 (Pynq-Z2).
+
+In a deployed system the four classifiers would sit on four physically separate
+relays, each with its own fabric, and only the four bits would travel between them.
+This implementation places all four cores plus the gate on a single chip, which is
+what makes the resource figures meaningful: four complete relay classifiers occupy
+1.7% of one Zynq-7020.
 
 The hardware and software boundary is drawn deliberately:
 
