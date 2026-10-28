@@ -7,6 +7,20 @@ classifiers are combined with a one-bit consensus rule, which recovers most of t
 accuracy of a centralized model while sending four bits across the network instead
 of thirty-six measurements.
 
+| | |
+| --- | --- |
+| **Architecture** | 4 relay-local classifiers, 1 bit each, combined by an OR gate |
+| **Detection** | 0.5214 macro F1 held out, 68.1% of a centralized model's gain over baseline |
+| **Bandwidth** | 4 bits per snapshot instead of 32 feature values and 4 flags |
+| **Latency** | 460 ns, deterministic, against an 8.33 ms PMU sample period |
+| **Fabric** | 1.7% LUT, 16.4% DSP, no BRAM on a Zynq-7020 |
+| **Verification** | 100/100 C simulation, 100/100 C/RTL co-simulation |
+| **Status** | synthesized and verified in simulation; board deployment in progress |
+
+Every figure above is reproducible from this repository. The 460 ns is the classifier
+itself from synthesis, not an end-to-end system measurement; see
+[Synthesis results](#synthesis-results).
+
 This extends a prior research project on the same dataset. That work asked what the
 smallest set of PMU features is that a single relay could compute online at 120 Hz,
 and whether a model trained on three relays generalizes to a fourth. The honest
